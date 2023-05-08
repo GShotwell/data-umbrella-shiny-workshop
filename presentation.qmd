@@ -1,3 +1,5 @@
+# Setup
+
 The first step when starting a new shiny app is to set up a virtual environment. 
 You should get in the habit of doing this with every project because it makes deployment much easier. 
 
@@ -9,4 +11,196 @@ Next we'll install the packages we'll be using for this presentation.
 
 ```{.bash}
 pip install shiny plotnine pandas
+```
+To make sure that everything is setup correctly, let's create a new shiny app.
+
+```{.bash}
+shiny create .
+```
+
+To run the app run the following:
+
+```{.bash}
+shiny run app.py --reload
+```
+
+# Building a simple dashboard
+
+We're going to be building a simple dashboard based on the palmer penguins data. 
+The dashboard will have A table which shows some penguin counts and a plot of the weight distributions. 
+We start by adding a slider input and a table output, then add a sever function to create the table.
+
+```{.python}
+from shiny import App, render, ui
+import pandas as pd
+
+app_ui = ui.page_fluid(
+    ui.layout_sidebar(
+        ui.panel_sidebar(
+            ui.input_slider(
+                id="mass",
+                label="Max Body Mass",
+                min=2000,
+                max=8000,
+                value=3000,
+            )
+        ),
+        ui.panel_main(ui.h2("Palmer Penguins"), ui.output_table(id="summary")),
+    )
+)
+
+
+def server(input, output, session):
+    df = pd.read_csv("penguins.csv")
+
+    @output
+    @render.table
+    def summary():
+        out = df.copy()
+        out = out.loc[df["Body Mass (g)"] < input.mass()]
+        out = out.groupby("Species", as_index=False).size()
+        return out
+```
+# Adding a plot
+
+The next step is to add a plot, to do this we add an `output_plot` and fill in the logic to draw the plot. It's natural to start by copying over the data filtering logic from the summary table call which would create an application that looked like this:
+
+```{mermaid}
+flowchart LR
+  A(Slider change) --> B(Filter Data)
+  B --> C(Render Table)
+  A --> D(Filter Data) --> E(Draw Graph)
+```
+
+However Shiny has something called Reactive Calcualtion which lets you extract that part of each rendering function and put it in one place. This is great to avoid code repetition, but will also make your app run faster because the caculation will only run when it's necessary. The update application will look like this:
+
+```{mermaid}
+flowchart LR
+  A(Slider change) --> B(Filter Data)
+  B --> C(Render Table)
+  B --> E(Draw Graph)
+```
+
+And the code will be this:
+
+```{.python}
+from shiny import App, render, ui, reactive
+import pandas as pd
+from plotnine import ggplot, geom_density, aes, theme_light
+
+
+app_ui = ui.page_fluid(
+    ui.layout_sidebar(
+        ui.panel_sidebar(
+            ui.input_slider(
+                id="mass",
+                label="Max Body Mass",
+                min=2000,
+                max=8000,
+                value=6000,
+            )
+        ),
+        ui.panel_main(
+            ui.h2("Palmer Penguins"),
+            ui.output_table(id="summary"),
+            ui.output_plot(id="mass_hist"),
+        ),
+    )
+)
+
+
+def server(input, output, session):
+    df = pd.read_csv("penguins.csv")
+
+    @reactive.Calc
+    def filtered_data():
+        filt_df = df.copy()
+        filt_df = filt_df.loc[df["Body Mass (g)"] < input.mass()]
+        return filt_df
+
+    @output
+    @render.table
+    def summary():
+        out = filtered_data().groupby("Species", as_index=False).size()
+        return out
+
+    @output
+    @render.plot
+    def mass_hist():
+        plot_df = filtered_data()
+        plot = (
+            ggplot(plot_df, aes(x="Body Mass (g)", fill="Species"))
+            + geom_density(alpha=0.2)
+            + theme_light()
+        )
+        return plot
+
+
+app = App(app_ui, server)
+```
+
+# Adding an action button
+
+In general you should use reactive calculations to generate application values, but what if you need a side effect like downloading a file or updating a slider value? Shiny lets you do this with *Reactive Events*. By convention we use an anonymous function for this because it doesn't connect to a UI element. 
+
+```{.python}
+from shiny import App, render, ui, reactive
+import pandas as pd
+from plotnine import ggplot, geom_density, aes, theme_light
+
+
+app_ui = ui.page_fluid(
+    ui.layout_sidebar(
+        ui.panel_sidebar(
+            ui.input_slider(
+                id="mass",
+                label="Max Body Mass",
+                min=2000,
+                max=8000,
+                value=6000,
+            ),
+            ui.input_action_button("reset", "Reset Slider"),
+        ),
+        ui.panel_main(
+            ui.h2("Palmer Penguins"),
+            ui.output_table(id="summary"),
+            ui.output_plot(id="mass_hist"),
+        ),
+    )
+)
+
+
+def server(input, output, session):
+    df = pd.read_csv("penguins.csv")
+
+    @reactive.Calc
+    def filtered_data():
+        filt_df = df.copy()
+        filt_df = filt_df.loc[df["Body Mass (g)"] < input.mass()]
+        return filt_df
+
+    @output
+    @render.table
+    def summary():
+        out = filtered_data().groupby("Species", as_index=False).size()
+        return out
+
+    @output
+    @render.plot
+    def mass_hist():
+        plot_df = filtered_data()
+        plot = (
+            ggplot(plot_df, aes(x="Body Mass (g)", fill="Species"))
+            + geom_density(alpha=0.2)
+            + theme_light()
+        )
+        return plot
+
+    @reactive.Effect
+    @reactive.event(input.reset)
+    def _():
+        ui.update_slider(id="mass", value=6000)
+
+
+app = App(app_ui, server)
 ```
