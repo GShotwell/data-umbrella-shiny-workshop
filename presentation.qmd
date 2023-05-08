@@ -1,0 +1,12 @@
+The first step when starting a new shiny app is to set up a virtual environment. 
+You should get in the habit of doing this with every project because it makes deployment much easier. 
+
+```{.bash}
+python3 -m venv .venv
+```
+
+Next we'll install the packages we'll be using for this presentation. 
+
+```{.bash}
+pip install shiny plotnine pandas
+```
