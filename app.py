@@ -12,7 +12,8 @@ app_ui = ui.page_fluid(
                 min=2000,
                 max=8000,
                 value=6000,
-            )
+            ),
+            ui.input_action_button("reset", "Reset Slider"),
         ),
         ui.panel_main(
             ui.h2("Palmer Penguins"),
@@ -48,6 +49,12 @@ def server(input, output, session):
             + theme_light()
         )
         return plot
+
+    @reactive.Effect
+    @reactive.event(input.reset)
+    def _():
+        print("Pushed!")
+        ui.update_slider(id="mass", value=6000)
 
 
 app = App(app_ui, server)
